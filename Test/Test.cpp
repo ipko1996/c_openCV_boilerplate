@@ -7,6 +7,30 @@
 using namespace std;
 using namespace cv;
 
+void saveImg(string name, Mat src)
+{
+    vector<int> compression_params;
+    compression_params.push_back(IMWRITE_JPEG_QUALITY);
+    compression_params.push_back(90);
+    bool result = false;
+    try
+    {
+        result = imwrite(name, src, compression_params);
+    }
+    catch (const cv::Exception& ex)
+    {
+        fprintf(stderr, "Exception saving file: %s\n", ex.what());
+    }
+    if (result)
+        printf("File saved.\n");
+    else
+        printf("ERROR: Can't save file.\n");
+
+    compression_params.pop_back();
+    compression_params.pop_back();
+
+}
+
 void showHist(string name, Mat* src)
 {
     //Mat temp = src.clone();
@@ -32,12 +56,12 @@ void showHist(string name, Mat* src)
     }
 
     imshow(name, histImage);
+    saveImg("hist_vil_" + name + ".jpg", histImage);
 }
-
 
 int main(int argc, char** argv)
 {
-    CommandLineParser parser(argc, argv, "{@input | peppers_sotet.bmp | lena.jpg | input image}");
+    CommandLineParser parser(argc, argv, "{@input | peppers_vilagos.bmp | lena.jpg | input image}");
     Mat src = imread(samples::findFile(parser.get<String>("@input")), IMREAD_COLOR);
     if (src.empty())
     {
@@ -96,6 +120,12 @@ int main(int argc, char** argv)
     showHist("Square_root hist", &square_root_img);
     showHist("Square image hist", &square_img);
     showHist("Out hist", &out);
+
+    saveImg("vil_square_root_img.jpg", square_root_img);
+    saveImg("vil_Square.jpg", square_img);
+    saveImg("vil_square_root_img.jpg", square_root_img);
+    saveImg("vil_Out_simple.jpg", out);
+
       
     imshow("Source image", src);
     imshow("Square_root image", square_root_img);
