@@ -61,7 +61,7 @@ void showHist(string name, Mat* src)
 
 int main(int argc, char** argv)
 {
-    CommandLineParser parser(argc, argv, "{@input | gradients.jpg | lena.jpg | input image}");
+    CommandLineParser parser(argc, argv, "{@input | lena.jpg | input image}");
     Mat src = imread(samples::findFile(parser.get<String>("@input")), IMREAD_COLOR);
     if (src.empty())
     {
@@ -118,13 +118,21 @@ int main(int argc, char** argv)
                         laplace.at<double>(k, l);
                 }
             }
-            //if (temp < 0) {
-            //    temp = 0;
-            //}
-            //else if (temp > 255) {
-            //    temp = 255;
-            //}
-            out.at<unsigned char>(i + kernel_rad, j + kernel_rad) = saturate_cast<unsigned char>(temp);
+            if (temp < 0) {
+                temp = 0;
+            }
+            else if (temp > 255) {
+                temp = 255;
+            }
+            out.at<unsigned char>(i + kernel_rad, j + kernel_rad) = (unsigned char)temp;
+        }
+    }
+
+    for (size_t i = 0; i < out.rows; i++)
+    {
+        for (size_t j = 0; j < out.cols; j++)
+        {
+            out.at<unsigned char>(i, j) *= 3;
         }
     }
 
@@ -143,7 +151,7 @@ int main(int argc, char** argv)
     cout << "max: " << (int) max << endl;
 
 
-    imshow("original", gsrc);
+    imshow("original", gsrc); 
     imshow("out", out);
     //showHist("original_test", &gsrc);
     //showHist("out_test", &out);
