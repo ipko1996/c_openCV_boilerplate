@@ -56,12 +56,12 @@ void showHist(string name, Mat* src)
     }
 
     imshow(name, histImage);
-    saveImg("hist_vil_" + name + ".jpg", histImage);
+    //saveImg("hist_over_exp_" + name + ".jpg", histImage);
 }
 
 int main(int argc, char** argv)
 {
-    CommandLineParser parser(argc, argv, "{@input | peppers_vilagos.bmp | lena.jpg | input image}");
+    CommandLineParser parser(argc, argv, "{@input | airplane.bmp | lena.jpg | input image}");
     Mat src = imread(samples::findFile(parser.get<String>("@input")), IMREAD_COLOR);
     if (src.empty())
     {
@@ -72,65 +72,57 @@ int main(int argc, char** argv)
     cvtColor(src, gsrc, cv::COLOR_BGR2GRAY);
         
     Mat out = gsrc.clone();
-    Mat square_root_img = gsrc.clone();
-    Mat square_img = gsrc.clone();
 
-    unsigned char max=0, min=255;
+    int histogram[256];
+    int look_up_table[256];
+    for (size_t i = 0; i < 256; i++)
+    {
+        histogram[i] = 0;
+        look_up_table[i] = 0;
+    }
+
+    int size = gsrc.rows * gsrc.cols; // N
+    int k = 128;
+    int dist = (int) size / k;
+
     for (size_t i = 0; i < gsrc.rows; i++)
     {
         for (size_t j = 0; j < gsrc.cols; j++)
         {
-            if (gsrc.at<unsigned char>(i, j) > max)
-                max = gsrc.at<unsigned char>(i, j);
-            if (gsrc.at<unsigned char>(i, j) < min)
-                min = gsrc.at<unsigned char>(i, j);
+            histogram[gsrc.at<unsigned char>(i, j)]++;
         }
     }
 
-    for (size_t i = 0; i < out.rows; i++)
+    int sum = 0;
+    int i = 1;
+    for (size_t j = 0; j < 256; j++)
     {
-        for (size_t j = 0; j < out.cols; j++)
+        sum += histogram[j];
+        look_up_table[j] = (unsigned char)(i * 256.0f / k);
+        if (sum >= dist) 
         {
-            unsigned char x = gsrc.at<unsigned char>(i, j);
-            out.at<unsigned char>(i, j) = (unsigned char) (255.0f / (max - min)) * (x - min);
+            if (histogram[j] > dist) 
+                i += 2;
+            else
+                i++;
+            //i++;
+            sum = 0;
         }
     }
 
-    for (size_t i = 0; i < square_root_img.rows; i++)
+    for (size_t i = 0; i < gsrc.rows; i++)
     {
-        for (size_t j = 0; j < square_root_img.cols; j++)
+        for (size_t j = 0; j < gsrc.cols; j++)
         {
-            unsigned char x = gsrc.at<unsigned char>(i, j);
-            unsigned char y = (unsigned char) (255 *sqrt(x / 255.0f));
-            square_root_img.at<unsigned char>(i, j) = y;
+            out.at<unsigned char>(i, j) = look_up_table[out.at<unsigned char>(i, j)];
         }
     }
 
-    for (size_t i = 0; i < square_img.rows; i++)
-    {
-        for (size_t j = 0; j < square_img.cols; j++)
-        {
-            unsigned char x = gsrc.at<unsigned char>(i, j);
-            unsigned char y = (unsigned char)(255 * pow((x/255.0f),2));
-            square_img.at<unsigned char>(i, j) = y;
-        }
-    }
 
-    showHist("src hist", &gsrc);
-    showHist("Square_root hist", &square_root_img);
-    showHist("Square image hist", &square_img);
-    showHist("Out hist", &out);
-
-    saveImg("vil_square_root_img.jpg", square_root_img);
-    saveImg("vil_Square.jpg", square_img);
-    saveImg("vil_square_root_img.jpg", square_root_img);
-    saveImg("vil_Out_simple.jpg", out);
-
-      
-    imshow("Source image", src);
-    imshow("Square_root image", square_root_img);
-    imshow("Square image", square_img);
-    imshow("Out image", out);
+    imshow("original", gsrc);
+    imshow("out", out);
+    showHist("original_hist", &gsrc);
+    showHist("out_hist", &out);
 
     waitKey();
     return EXIT_SUCCESS;
