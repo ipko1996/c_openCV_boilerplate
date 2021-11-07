@@ -56,12 +56,12 @@ void showHist(string name, Mat* src)
     }
 
     imshow(name, histImage);
-    //saveImg("hist_over_exp_" + name + ".jpg", histImage);
+    saveImg("hist_" + name + ".jpg", histImage);
 }
 
 int main(int argc, char** argv)
 {
-    CommandLineParser parser(argc, argv, "{@input | airplane.bmp | lena.jpg | input image}");
+    CommandLineParser parser(argc, argv, "{@input | gradients.jpg | lena.jpg | input image}");
     Mat src = imread(samples::findFile(parser.get<String>("@input")), IMREAD_COLOR);
     if (src.empty())
     {
@@ -73,56 +73,83 @@ int main(int argc, char** argv)
         
     Mat out = gsrc.clone();
 
-    int histogram[256];
-    int look_up_table[256];
-    for (size_t i = 0; i < 256; i++)
-    {
-        histogram[i] = 0;
-        look_up_table[i] = 0;
-    }
+    Mat kernel = (Mat_<double>(3, 3) << 
+        1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 
+        1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
+        1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0);
 
-    int size = gsrc.rows * gsrc.cols; // N
-    int k = 128;
-    int dist = (int) size / k;
+    Mat gauss = (Mat_<double>(5, 5) <<
+        1.0 / 126.0, 2.0 / 126.0, 3.0 / 126.0, 2.0 / 126.0, 1.0 / 126.0,
+        2.0 / 126.0, 7.0 / 126.0, 11.0 / 126.0, 7.0 / 126.0, 2.0 / 126.0,
+        3.0 / 126.0, 11.0 / 126.0, 17.0 / 126.0, 11.0 / 126.0, 3.0 / 126.0,
+        2.0 / 126.0, 7.0 / 126.0, 11.0 / 126.0, 7.0 / 126.0, 2.0 / 126.0,
+        1.0 / 126.0, 2.0 / 126.0, 3.0 / 126.0, 2.0 / 126.0, 1.0 / 126.0
+        );
 
-    for (size_t i = 0; i < gsrc.rows; i++)
+    Mat laplace = (Mat_<double>(3, 3) <<
+        0, -1.0 / 4.0, 0,
+        -1.0 / 4.0, 4.0 / 4.0, -1.0 / 4.0,
+        0, -1.0 / 4.0, 0
+        );
+
+    Mat prewitt_ver = (Mat_<double>(3, 3) <<
+        1.0 / 3.0, 0, -1.0 / 3.0,
+        1.0 / 3.0, 0, -1.0 / 3.0,
+        1.0 / 3.0, 0, -1.0 / 3.0);
+
+    Mat prewitt_hor = (Mat_<double>(3, 3) <<
+        1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0,
+        0, 0, 0,
+        -1.0 / 3.0, -1.0 / 3.0, -1.0 / 3.0);
+
+    int kernel_rad = (int) (3-1) / 2;
+
+    for (int i = 0; i < gsrc.rows-(2*kernel_rad); i++)
     {
-        for (size_t j = 0; j < gsrc.cols; j++)
+        for (int j = 0; j < gsrc.cols-(2*kernel_rad); j++)
         {
-            histogram[gsrc.at<unsigned char>(i, j)]++;
+            double temp = 0;
+            for (int k = 0; k < 2*kernel_rad+1; k++)
+            {
+                for (int l = 0; l < 2*kernel_rad+1; l++)
+                {
+                    temp += 
+                        gsrc.at<unsigned char>(i + k, j + l) * 
+                        laplace.at<double>(k, l);
+                }
+            }
+            //if (temp < 0) {
+            //    temp = 0;
+            //}
+            //else if (temp > 255) {
+            //    temp = 255;
+            //}
+            out.at<unsigned char>(i + kernel_rad, j + kernel_rad) = saturate_cast<unsigned char>(temp);
         }
     }
 
-    int sum = 0;
-    int i = 1;
-    for (size_t j = 0; j < 256; j++)
+    unsigned char max = 0, min = 255;
+    for (size_t i = 0; i < out.rows; i++)
     {
-        sum += histogram[j];
-        look_up_table[j] = (unsigned char)(i * 256.0f / k);
-        if (sum >= dist) 
+        for (size_t j = 0; j < out.cols; j++)
         {
-            if (histogram[j] > dist) 
-                i += 2;
-            else
-                i++;
-            //i++;
-            sum = 0;
+            if (out.at<unsigned char>(i, j) > max)
+                max = out.at<unsigned char>(i, j);
+            if (out.at<unsigned char>(i, j) < min)
+                min = out.at<unsigned char>(i, j);
         }
     }
-
-    for (size_t i = 0; i < gsrc.rows; i++)
-    {
-        for (size_t j = 0; j < gsrc.cols; j++)
-        {
-            out.at<unsigned char>(i, j) = look_up_table[out.at<unsigned char>(i, j)];
-        }
-    }
+    cout << "min: " << (int) min << endl;
+    cout << "max: " << (int) max << endl;
 
 
     imshow("original", gsrc);
     imshow("out", out);
-    showHist("original_hist", &gsrc);
-    showHist("out_hist", &out);
+    //showHist("original_test", &gsrc);
+    //showHist("out_test", &out);
+
+    //saveImg("test_orig.jpg", gsrc);
+    //saveImg("test_out.jpg", out);
 
     waitKey();
     return EXIT_SUCCESS;
