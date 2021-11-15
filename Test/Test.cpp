@@ -2,164 +2,99 @@
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/imgproc.hpp"
 #include <iostream>
-#include <math.h>  
-#include <string>
+
 using namespace std;
 using namespace cv;
 
-void saveImg(string name, Mat src)
+unsigned char getPixel(Mat& src, int c, int r)
 {
-    vector<int> compression_params;
-    compression_params.push_back(IMWRITE_JPEG_QUALITY);
-    compression_params.push_back(90);
-    bool result = false;
-    try
-    {
-        result = imwrite(name, src, compression_params);
-    }
-    catch (const cv::Exception& ex)
-    {
-        fprintf(stderr, "Exception saving file: %s\n", ex.what());
-    }
-    if (result)
-        printf("File saved.\n");
-    else
-        printf("ERROR: Can't save file.\n");
+	if (c < 0) c = 0;
+	if (c >= src.cols) c = src.cols - 1;
+	if (r < 0) r = 0;
+	if (r >= src.rows) r = src.rows - 1;
 
-    compression_params.pop_back();
-    compression_params.pop_back();
-
-}
-
-void showHist(string name, Mat* src)
-{
-    //Mat temp = src.clone();
-    Mat hist;
-    int hist_size = 256;
-    float range[] = { 0,256 };
-    const float* hist_range = { range };
-    bool uniform = true, accumulate = false;
-
-    calcHist(src, 1, 0, Mat(), hist, 1, &hist_size, &hist_range, uniform, accumulate);
-    int hist_w = 512;
-    int hist_h = 512;
-    int bin_w = cvRound((double)hist_w / hist_size);
-
-    Mat histImage(hist_h, hist_w, CV_8UC3, Scalar(0, 0, 0));
-    normalize(hist, hist, 0, histImage.rows, NORM_MINMAX, -1, Mat());
-
-    for (int i = 1; i < hist_size; i++)
-    {
-        line(histImage, Point(bin_w * (i - 1), hist_h - cvRound(hist.at<float>(i - 1))),
-            Point(bin_w * (i), hist_h - cvRound(hist.at<float>(i))),
-            Scalar(255, 255, 255), 2, 1, 0);
-    }
-
-    imshow(name, histImage);
-    saveImg("hist_" + name + ".jpg", histImage);
+	return src.at<unsigned char>(r, c);
 }
 
 int main(int argc, char** argv)
 {
-    CommandLineParser parser(argc, argv, "{@input | lena.jpg | input image}");
-    Mat src = imread(samples::findFile(parser.get<String>("@input")), IMREAD_COLOR);
-    if (src.empty())
-    {
-        return EXIT_FAILURE;
-    }
+	//Kép betöltése
+	CommandLineParser parser(argc, argv, "{@input | lena.jpg | input image}");
+	Mat src = imread(samples::findFile(parser.get<cv::String>("@input")), IMREAD_COLOR);
+	if (src.empty())
+	{
+		return EXIT_FAILURE;
+	}
 
-    Mat gsrc;
-    cvtColor(src, gsrc, cv::COLOR_BGR2GRAY);
-        
-    Mat out = gsrc.clone();
+	Mat gsrc;
+	cvtColor(src, gsrc, COLOR_BGR2GRAY);
+	imshow("Original", gsrc);
 
-    Mat kernel = (Mat_<double>(3, 3) << 
-        1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0, 
-        1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0,
-        1.0 / 9.0, 1.0 / 9.0, 1.0 / 9.0);
+	int radius = 10;
 
-    Mat gauss = (Mat_<double>(5, 5) <<
-        1.0 / 126.0, 2.0 / 126.0, 3.0 / 126.0, 2.0 / 126.0, 1.0 / 126.0,
-        2.0 / 126.0, 7.0 / 126.0, 11.0 / 126.0, 7.0 / 126.0, 2.0 / 126.0,
-        3.0 / 126.0, 11.0 / 126.0, 17.0 / 126.0, 11.0 / 126.0, 3.0 / 126.0,
-        2.0 / 126.0, 7.0 / 126.0, 11.0 / 126.0, 7.0 / 126.0, 2.0 / 126.0,
-        1.0 / 126.0, 2.0 / 126.0, 3.0 / 126.0, 2.0 / 126.0, 1.0 / 126.0
-        );
+	Mat avg = Mat::zeros(gsrc.rows, gsrc.cols, gsrc.type());
+	//Elore kiszamoljuk pow((2 * radius + 1), 2)
+	float dev = pow((2 * radius + 1), 2);
 
-    Mat laplace = (Mat_<double>(3, 3) <<
-        0, -1.0 / 4.0, 0,
-        -1.0 / 4.0, 4.0 / 4.0, -1.0 / 4.0,
-        0, -1.0 / 4.0, 0
-        );
+	//Lokális átlag mátrix
+	for (int i = 0; i < avg.rows; i++) {
+		for (int j = 0; j < avg.cols; j++) {
+			float sum = 0;
+			//Kép mátrix
+			for (int k = i - radius; k <= i + radius; k++) {
+				for (int l = j - radius; l <= j + radius; l++) {
 
-    Mat prewitt_ver = (Mat_<double>(3, 3) <<
-        1.0 / 3.0, 0, -1.0 / 3.0,
-        1.0 / 3.0, 0, -1.0 / 3.0,
-        1.0 / 3.0, 0, -1.0 / 3.0);
+					sum += getPixel(gsrc, l, k);
+				}
+			}
+			avg.at<unsigned char>(i, j) = sum / dev;
+		}
+	}
 
-    Mat prewitt_hor = (Mat_<double>(3, 3) <<
-        1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0,
-        0, 0, 0,
-        -1.0 / 3.0, -1.0 / 3.0, -1.0 / 3.0);
+	//SZÓRÁSNÉGYZET
+	Mat variance = Mat::zeros(gsrc.rows, gsrc.cols, gsrc.type());
+	for (int i = 0; i < variance.rows; i++) {
+		for (int j = 0; j < variance.cols; j++) {
+			float sum = 0;
+			for (int k = i - radius; k <= i + radius; k++) {
+				for (int l = j - radius; l <= j + radius; l++) {
+					uchar src_pix = getPixel(gsrc, l, k);
+					uchar avg_pix = getPixel(avg, j, i);
+					int dif = src_pix - avg_pix;
+					int res = dif * dif;
+					sum += res; //pow((getPixel(src, src_c, src_r) - getPixel(avg, var_c, var_r)), 2);
+				}
+			}
+			variance.at<unsigned char>(i, j) = sum / dev;
+		}
+	}
 
-    int kernel_rad = (int) (3-1) / 2;
+	int contrast = 100;         //Sd elvárt kontraszt
+	int brightness = 128;       //Md elvárt világosság
+	float bright_mod = 0.25f;   //r brightness modifier
+	float cont_mod = 2.5f;      //Amax contrast modifier
 
-    for (int i = 0; i < gsrc.rows-(2*kernel_rad); i++)
-    {
-        for (int j = 0; j < gsrc.cols-(2*kernel_rad); j++)
-        {
-            double temp = 0;
-            for (int k = 0; k < 2*kernel_rad+1; k++)
-            {
-                for (int l = 0; l < 2*kernel_rad+1; l++)
-                {
-                    temp += 
-                        gsrc.at<unsigned char>(i + k, j + l) * 
-                        laplace.at<double>(k, l);
-                }
-            }
-            if (temp < 0) {
-                temp = 0;
-            }
-            else if (temp > 255) {
-                temp = 255;
-            }
-            out.at<unsigned char>(i + kernel_rad, j + kernel_rad) = (unsigned char)temp;
-        }
-    }
+	//Wallis
+	Mat dest = Mat::zeros(gsrc.rows, gsrc.cols, gsrc.type());
+	for (int i = 0; i < dest.rows; i++) {
+		for (int j = 0; j < dest.cols; j++) {
 
-    for (size_t i = 0; i < out.rows; i++)
-    {
-        for (size_t j = 0; j < out.cols; j++)
-        {
-            out.at<unsigned char>(i, j) *= 3;
-        }
-    }
+			float temp = ((gsrc.at<unsigned char>(i, j) - avg.at<unsigned char>(i, j))
+				* ((cont_mod * contrast) / (contrast + (cont_mod * (float)sqrt(variance.at<unsigned char>(i, j))))))
+				+ ((bright_mod * brightness) + ((1.0f - bright_mod) * avg.at<unsigned char>(i, j)));
 
-    unsigned char max = 0, min = 255;
-    for (size_t i = 0; i < out.rows; i++)
-    {
-        for (size_t j = 0; j < out.cols; j++)
-        {
-            if (out.at<unsigned char>(i, j) > max)
-                max = out.at<unsigned char>(i, j);
-            if (out.at<unsigned char>(i, j) < min)
-                min = out.at<unsigned char>(i, j);
-        }
-    }
-    cout << "min: " << (int) min << endl;
-    cout << "max: " << (int) max << endl;
+			if (temp <= 0) {
+				temp = 0;
+			}
+			else if (temp >= 255) {
+				temp = 255;
+			}
+			dest.at<unsigned char>(i, j) = temp;
+		}
+	}
+	imshow("Wallis", dest);
 
+	waitKey(0);
 
-    imshow("original", gsrc); 
-    imshow("out", out);
-    //showHist("original_test", &gsrc);
-    //showHist("out_test", &out);
-
-    //saveImg("test_orig.jpg", gsrc);
-    //saveImg("test_out.jpg", out);
-
-    waitKey();
-    return EXIT_SUCCESS;
+	return EXIT_SUCCESS;
 }
-
