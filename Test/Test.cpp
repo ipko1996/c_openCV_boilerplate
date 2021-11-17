@@ -6,20 +6,15 @@
 using namespace std;
 using namespace cv;
 
-unsigned char getPixel(Mat& src, int c, int r)
+int comp(const void* p1, const void* p2) // az összehasonlító függény definíciója
 {
-	if (c < 0) c = 0;
-	if (c >= src.cols) c = src.cols - 1;
-	if (r < 0) r = 0;
-	if (r >= src.rows) r = src.rows - 1;
-
-	return src.at<unsigned char>(r, c);
+	return *(const unsigned char*)p1 - *(const unsigned char*)p2;
 }
 
 int main(int argc, char** argv)
 {
 	//Kép betöltése
-	CommandLineParser parser(argc, argv, "{@input | lena.jpg | input image}");
+	CommandLineParser parser(argc, argv, "{@input | sajat_zajos.jpg | input image}");
 	Mat src = imread(samples::findFile(parser.get<cv::String>("@input")), IMREAD_COLOR);
 	if (src.empty())
 	{
@@ -30,69 +25,79 @@ int main(int argc, char** argv)
 	cvtColor(src, gsrc, COLOR_BGR2GRAY);
 	imshow("Original", gsrc);
 
-	int radius = 10;
+	cvtColor(src, gsrc, cv::COLOR_BGR2GRAY);
+	Mat avg = gsrc.clone();
+	Mat out = gsrc.clone();
 
-	Mat avg = Mat::zeros(gsrc.rows, gsrc.cols, gsrc.type());
-	//Elore kiszamoljuk pow((2 * radius + 1), 2)
-	float dev = pow((2 * radius + 1), 2);
+	Mat outlier = (Mat_<double>(3, 3) <<
+		1.0 / 8.0, 1.0 / 8.0, 1.0 / 8.0,
+		1.0 / 8.0, 0, 1.0 / 8.0,
+		1.0 / 8.0, 1.0 / 8.0, 1.0 / 8.0
+		);
+	int kernel_rad = 1;
 
-	//Lokális átlag mátrix
-	for (int i = 0; i < avg.rows; i++) {
-		for (int j = 0; j < avg.cols; j++) {
-			float sum = 0;
-			//Kép mátrix
-			for (int k = i - radius; k <= i + radius; k++) {
-				for (int l = j - radius; l <= j + radius; l++) {
-
-					sum += getPixel(gsrc, l, k);
+	for (int i = 0; i < gsrc.rows - (2 * kernel_rad); i++)
+	{
+		for (int j = 0; j < gsrc.cols - (2 * kernel_rad); j++)
+		{
+			double temp = 0;
+			for (int k = 0; k < 2 * kernel_rad + 1; k++)
+			{
+				for (int l = 0; l < 2 * kernel_rad + 1; l++)
+				{
+					temp +=
+						gsrc.at<unsigned char>(i + k, j + l) *
+						outlier.at<double>(k, l);
 				}
 			}
-			avg.at<unsigned char>(i, j) = sum / dev;
+			//if (temp < 0) {
+			//	temp = 0;
+			//}
+			//else if (temp > 255) {
+			//	temp = 255;
+			//}
+			avg.at<unsigned char>(i + kernel_rad, j + kernel_rad) = (unsigned char)temp;
+
+			if (abs(avg.at<unsigned char>(i, j) - gsrc.at<unsigned char>(i, j)) <= 30)
+			{
+				out.at<unsigned char>(i, j) = gsrc.at<unsigned char>(i, j);
+			}
+			else
+			{
+				out.at<unsigned char>(i, j) = avg.at<unsigned char>(i, j);
+			}
 		}
 	}
 
-	//SZÓRÁSNÉGYZET
-	Mat variance = Mat::zeros(gsrc.rows, gsrc.cols, gsrc.type());
-	for (int i = 0; i < variance.rows; i++) {
-		for (int j = 0; j < variance.cols; j++) {
-			float sum = 0;
-			for (int k = i - radius; k <= i + radius; k++) {
-				for (int l = j - radius; l <= j + radius; l++) {
-					uchar src_pix = getPixel(gsrc, l, k);
-					uchar avg_pix = getPixel(avg, j, i);
-					int dif = src_pix - avg_pix;
-					int res = dif * dif;
-					sum += res; //pow((getPixel(src, src_c, src_r) - getPixel(avg, var_c, var_r)), 2);
+	Mat output = gsrc.clone();
+
+	int w = 1;
+	int* o = new int[4];
+	int ww = (w + 2) * (w + 2);
+	unsigned char* pixels = new unsigned char[ww];
+	int x;
+
+	for (size_t i = w; i < gsrc.rows - w; i++)
+	{
+		for (size_t j = w; j < gsrc.cols - w; j++)
+		{
+			x = 0;
+			for (size_t k = i - w; k <= i + w; k++)
+			{
+				for (size_t l = j - w; l <= j + w; l++)
+				{
+					pixels[x] = gsrc.at<unsigned char>(k, l);
+					x++;
 				}
 			}
-			variance.at<unsigned char>(i, j) = sum / dev;
+
+			qsort(pixels, 9, sizeof(unsigned char), comp);
+			output.at<unsigned char>(i, j) = pixels[5];
 		}
 	}
 
-	int contrast = 100;         //Sd elvárt kontraszt
-	int brightness = 128;       //Md elvárt világosság
-	float bright_mod = 0.25f;   //r brightness modifier
-	float cont_mod = 2.5f;      //Amax contrast modifier
-
-	//Wallis
-	Mat dest = Mat::zeros(gsrc.rows, gsrc.cols, gsrc.type());
-	for (int i = 0; i < dest.rows; i++) {
-		for (int j = 0; j < dest.cols; j++) {
-
-			float temp = ((gsrc.at<unsigned char>(i, j) - avg.at<unsigned char>(i, j))
-				* ((cont_mod * contrast) / (contrast + (cont_mod * (float)sqrt(variance.at<unsigned char>(i, j))))))
-				+ ((bright_mod * brightness) + ((1.0f - bright_mod) * avg.at<unsigned char>(i, j)));
-
-			if (temp <= 0) {
-				temp = 0;
-			}
-			else if (temp >= 255) {
-				temp = 255;
-			}
-			dest.at<unsigned char>(i, j) = temp;
-		}
-	}
-	imshow("Wallis", dest);
+	imshow("Avg filter", out);
+	imshow("Median filter", output);
 
 	waitKey(0);
 
